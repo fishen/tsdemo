@@ -1,0 +1,12 @@
+{
+    "server": {
+        "host": "127.0.0.1",
+        "port": 8080
+    },
+    "db": "mysql://root:192073@localhost:3306/mydb",
+    "redis": {
+        "host": "127.0.0.1",
+        "post": 6379
+    },
+    "usecache": true
+}
