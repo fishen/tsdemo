@@ -3,8 +3,6 @@ import { table, column } from '../core';
 
 @table({ tableName: 'addresses' })
 export class Addresses extends Model {
-    @column({ primaryKey: true, autoIncrement: true })
-    public id: number;
     @column({ allowNull: false })
     public province: string;
     @column({ allowNull: false })

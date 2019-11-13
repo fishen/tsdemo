@@ -1,58 +1,40 @@
 
-import { Controller, route, router, query, httpPost, httpPut, httpDelete, body, httpPatch, httpGet, inject, cachable, injectable } from "../core";
+import { route, router, httpPost, body, httpPatch, httpGet, inject, injectable } from "../core";
 import { IAddressService, IUserService } from "../services";
-import { UserViewModel, PagedUserListViewModel, ViewModel } from '../vmodels'
-import { map } from 'auto-mapping';
+import { UserViewModel, ViewModel } from '../vmodels'
+import BaseController from "./base.controller";
+import { Users } from "models";
 
 @router('users')
 @injectable
-export default class extends Controller {
+export default class extends BaseController<Users> {
     constructor(
-        @inject() private service: IUserService,
+        @inject() protected service: IUserService,
         @inject() private addressService: IAddressService,
     ) {
-        super();
+        super(service, UserViewModel);
     }
 
-    @httpGet()
-    public async index(@query('index') idx: number = 1, @query('size') size: number = 10) {
-        const users = await this.service.getList(idx, size);
-        const model = map(users, PagedUserListViewModel)!;
-        const result = new ViewModel(model);
-        return this.json(result);
-    }
-
-    @httpGet(/(?<id>\d+)/)
-    @cachable()
-    public async get(@route('id') id: number) {
-        const user = await this.service.get(id);
-        if (!user) return this.notFound();
-        const model: any = map(user, UserViewModel);
-        const result = new ViewModel(model);
-        return this.json(result);
-    }
-
+    /**
+     * 添加用户
+     * @param name 请求实体参数，用户名 
+     */
     @httpPost()
-    public async create() {
-        const user = this.context.request.body;
-        const existedUser = await this.service.getByUsername(user.username);
+    public async create(@body("username") name: string) {
+        const existedUser = await this.service.getByUsername(name);
         if (existedUser) {
             return this.badRequest({ message: '用户名已存在' });
         }
-        const created = await this.service.create(user);
-        return this.json(created);
+        return super.create();
     }
 
-    @httpPut('(?<id>\\d+)')
-    public async update(@route('id') id: number) {
-        const originalUser = await this.service.get(id);
-        if (!originalUser) return this.notFound();
-        const user = this.context.request.body;
-        await this.service.update(id, user);
-        return this.noContent();
-    }
-
-    @httpPatch('(?<id>\\d+)/password')
+    /**
+     * 重新设置密码
+     * @param id 路由参数，用户Id
+     * @param password 请求体参数，用户新密码
+     * @example /users/1/password
+     */
+    @httpPatch(/(?<id>\d+)\/password/)
     public async resetPassword(@route('id') id: number, @body('pwd') password: string) {
         const user = await this.service.get(id);
         if (!user) return this.notFound();
@@ -63,14 +45,11 @@ export default class extends Controller {
         return this.noContent();
     }
 
-    @httpDelete('(?<id>\\d+)')
-    public async delete(@route('id') id: number) {
-        const user = await this.service.get(id);
-        if (!user) return this.notFound();
-        await this.service.delete(id);
-        return this.noContent();
-    }
-
+    /**
+     * 获取指定用户的所有地址列表
+     * @param userId 路由参数，用户Id
+     * @example /users/1/addresses
+     */
     @httpGet('(?<id>\\d+)/addresses')
     public async getAddresses(@route('id') userId: number) {
         const user = await this.service.get(userId);
@@ -79,5 +58,4 @@ export default class extends Controller {
         const result = new ViewModel(addresses);
         return this.json(result);
     }
-
 }

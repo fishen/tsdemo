@@ -9,13 +9,13 @@ export enum DateFormatHandling {
     Timestamp
 }
 
-const dateFormatHandles = {
-    [DateFormatHandling.Default]: (value: Date) => value.toISOString(),
-    [DateFormatHandling.Date]: (value: Date) => value.toDateString(),
-    [DateFormatHandling.Locale]: (value: Date) => value.toLocaleString(),
-    [DateFormatHandling.ISODateFormat]: (value: Date) => value.toISOString(),
-    [DateFormatHandling.Timestamp]: (value: Date) => value.valueOf(),
-}
+const dateFormatHandles = new Map<DateFormatHandling, (value: Date) => string | number>([
+    [DateFormatHandling.Default, (value: Date) => value.toISOString()],
+    [DateFormatHandling.Date, (value: Date) => value.toDateString()],
+    [DateFormatHandling.Locale, (value: Date) => value.toLocaleString()],
+    [DateFormatHandling.ISODateFormat, (value: Date) => value.toISOString()],
+    [DateFormatHandling.Timestamp, (value: Date) => value.valueOf()]
+]);
 
 export class JsonSerializer {
     dateFormatHandling: DateFormatHandling;
@@ -29,9 +29,9 @@ export class JsonSerializer {
     }
 
     private getReplacer(obj: any) {
-        const prototype = Reflect.getPrototypeOf(obj);
         return (key: string, value: any) => {
             if (obj === value) return value;
+            const prototype = Reflect.getPrototypeOf(obj);
             const ignored = Reflect.getMetadata(JSON_IGNORE_KEY, prototype, key) === true;
             if (ignored) {
                 return undefined;
@@ -43,9 +43,9 @@ export class JsonSerializer {
             }
             this.dateFormatHandling = this.dateFormatHandling || DateFormatHandling.Default;
             if (value instanceof Date || rawValue instanceof Date) {
-                return dateFormatHandles[this.dateFormatHandling](rawValue);
+                return dateFormatHandles.get(this.dateFormatHandling)!(rawValue);
             }
-            if (typeof value === 'object' && value !== obj) {
+            if (value && typeof value === 'object' && value !== obj) {
                 obj = value;
             }
             return value;
@@ -60,7 +60,7 @@ export function jsonIgnore(target: any, name: string) {
 export function jsonConverter(converter: (...args: any[]) => any) {
     return function (target: any, name: string) {
         const converters = Reflect.getMetadata(JSON_CONVERTER_KEY, target) || {};
-        Object.assign(converters, { [name]: converter });
-        Reflect.defineMetadata(JSON_CONVERTER_KEY, converters, target);
+        const metadata = Object.assign({}, converters, { [name]: converter });
+        Reflect.defineMetadata(JSON_CONVERTER_KEY, metadata, target);
     }
 }

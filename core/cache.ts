@@ -1,6 +1,6 @@
 import { Controller } from "./controller";
 import { HttpMethod } from "./method";
-import { ServiceManager } from './inject';
+import { Injector } from './inject';
 import { ObjectResult, ActionResult } from './result';
 
 export interface ICacheManager {
@@ -14,15 +14,19 @@ export abstract class ICacheManager { }
 
 interface ICacheOptions {
     /**
-     * 缓存键名称
+     * 缓存键名称，默认使用请求url
      */
     key?: string,
     /**
-     * 过期时间，单位毫秒
+     * 缓存时间，单位毫秒
      */
-    expires?: number,
+    duration?: number,
 }
 
+/**
+ * 为接口添加缓存
+ * @param options 缓存选项 
+ */
 export function cachable(options?: ICacheOptions) {
     options = Object.assign({}, options);
     const decoractor = function (target: any, method: string, descriptor: PropertyDescriptor) {
@@ -34,7 +38,7 @@ export function cachable(options?: ICacheOptions) {
                 return original.apply(this, arguments);
             }
             const key = options!.key ? options!.key : `${url}`
-            const cache = ServiceManager.get<ICacheManager>(ICacheManager);
+            const cache = Injector.get<ICacheManager>(ICacheManager);
             const exisits = await cache.has(key);
             if (exisits) {
                 console.info(`Read from cache ${url}.`)
@@ -43,7 +47,7 @@ export function cachable(options?: ICacheOptions) {
             } else {
                 const result = await original.call(this, ...args);
                 if (result instanceof ActionResult && result.data) {
-                    cache.set(key, result.data, options!.expires);
+                    cache.set(key, result.data, options!.duration);
                 }
                 return result;
             }
@@ -53,6 +57,6 @@ export function cachable(options?: ICacheOptions) {
 }
 
 cachable.clear = async function (key: string) {
-    const cache = ServiceManager.get<ICacheManager>(ICacheManager);
+    const cache = Injector.get<ICacheManager>(ICacheManager);
     return await cache.delete(key);
 }

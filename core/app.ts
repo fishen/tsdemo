@@ -1,7 +1,6 @@
 import http from 'http';
-import { HttpRequest } from './request';
 import { ActionResult, NoContentResult, OKResult, ServerErrorResult } from './result';
-import { HttpContext } from './httpContext';
+import { HttpContext, HttpRequest } from './httpContext';
 
 export type ResultType = Promise<void> | Promise<ActionResult> | ActionResult | undefined;
 export type Middleware = (context: HttpContext, next: () => any) => ResultType;

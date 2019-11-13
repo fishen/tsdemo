@@ -2,8 +2,6 @@ export * from './controller';
 export * from './method';
 export * from './result';
 export * from './route';
-export * from './request';
-export * from './param';
 export * from './inject';
 export * from './json';
 export * from './db';

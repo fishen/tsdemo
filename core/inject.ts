@@ -3,12 +3,22 @@ import { DESIGN_PARAM_TYPES } from "./constants";
 
 const INJECT_ITEMS = new Map<any, any>();
 
-export class ServiceManager {
+export class Injector {
 
+    /**
+     * 注册依赖注入的类型
+     * @param type 类型
+     * @param value 对应类型的值或者工厂函数
+     */
     public static register(type: Function, value: any): void {
         INJECT_ITEMS.set(type, value);
     }
 
+    /**
+     * 获取已注册的类型值
+     * @param type 类型
+     * @param args 工厂函数调用时所需的参数
+     */
     public static get<T = any>(type: any, ...args: any[]): T {
         if (!INJECT_ITEMS.has(type)) {
             throw new Error(`Missing type ${type} injection`);
@@ -43,25 +53,25 @@ export function inject(...args: any[]) {
  * 自动为当前类成员绑定注入的值
  */
 export function injectable(ctor: new (...args: any) => any): any {
-    const paramtypes = Reflect.getMetadata(DESIGN_PARAM_TYPES, ctor);
-    const types: any[] = Reflect.getMetadata(INJECT_ARGS_KEY, ctor);
     return class extends ctor {
-        constructor(...ctorArgs: any) {
-            types.forEach(({ index, args }) => ctorArgs[index] = ServiceManager.get(paramtypes[index], ...args));
-            super(...ctorArgs);
+        constructor(...cargs: any) {
+            const ptypes = Reflect.getMetadata(DESIGN_PARAM_TYPES, ctor);
+            const types = Reflect.getMetadata(INJECT_ARGS_KEY, ctor);
+            types.forEach(({ index, args }) => cargs[index] = Injector.get(ptypes[index], ...args));
+            super(...cargs);
         }
     }
 }
 
 
 /**
- * 将当前的类注册到指定类型
+ * 将当前的类注册为指定类型的服务
  * @param type 要注册的类型
  * @param args 构造函数的参数，值可在注入时替换
  */
 export function injectFor(type: Function, ...args: any) {
     return function (ctor: new (...args: any) => any) {
-        ServiceManager.register(type, function (...otherArgs: any[]) {
+        Injector.register(type, function (...otherArgs: any[]) {
             const ctorArguments = otherArgs && otherArgs.length ? otherArgs : args;
             return new ctor(...ctorArguments);
         });

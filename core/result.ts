@@ -45,7 +45,7 @@ export class JsonResult extends ActionResult {
         context.response.setHeader('Content-Type', 'application/json');
         const serializer = new JsonSerializer();
         serializer.dateFormatHandling = DateFormatHandling.Timestamp;
-        context.response.end(JSON.stringify(this.data));
+        context.response.end(serializer.serialize(this.data));
     }
 }
 

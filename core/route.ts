@@ -1,8 +1,8 @@
 import { HttpMethod } from "./method";
-import { getBoundParams } from './param';
 import { HttpContext } from "./httpContext";
-import { HttpRequest } from "./request";
 import { NotFoundResult } from "./result";
+import { Controller } from "./controller";
+import { DESIGN_PARAM_TYPES } from "./constants";
 
 export class Router {
     /**
@@ -10,13 +10,9 @@ export class Router {
      */
     path: string;
     /**
-     * API方法
-     */
-    action: Function;
-    /**
      * API方法名称
      */
-    actionName: string;
+    action: string;
     /**
      * Http请求方式
      */
@@ -29,41 +25,31 @@ export class Router {
      * API绑定的路径对应的正则表达式
      */
     regex: RegExp;
-    constructor(options: Router) {
+    public static routers: Router[] = [];
+    public static register(options: Router) {
         let { path } = options;
         if (path) {
             path = path.replace(/\/{2,}/g, '/');
             path = path.startsWith('/') ? path : `/${path}`;
             path = path.endsWith('/') ? path : `${path}/`;
         }
-        this.regex = new RegExp(`^${path}$`);
-        Object.assign(this, options, { path });
+        const router = new Router();
+        Object.assign(router, options, { path, regex: new RegExp(`^${path}$`) })
+        this.routers.push(router);
     }
-    public static routers: Router[] = [];
-    public static register(options: Router) {
-        this.routers.push(new Router(options));
-    }
-    public static match(request: HttpRequest) {
-        const { path, method } = request;
+    public static async resolve(context: HttpContext, next: () => void) {
+        const { request: { path, method } } = context;
         const pathMatched = (route: Router) => route.path === path || route.regex.test(path);
         const route = Router.routers.find(item => item.method === method && pathMatched(item));
         if (route) {
-            const { groups } = route.regex.exec(request.path)!;
-            request.routeParams = groups || {};
-        }
-        return route;
-    }
-    public static async resolve(context: HttpContext, next: () => void) {
-        const { request } = context;
-        const route = Router.match(request)
-        if (route) {
-            const { ctor, action, actionName } = route;
-            const caller = Object.assign(new ctor(), { context });
-            const params = getBoundParams(request, ctor, actionName);
-            const result = await action.apply(caller, params);
-            context.result = result;
+            const { groups } = route.regex.exec(path)!;
+            context.request.routeParams = groups || {};
+            const { ctor, action } = route;
+            const instance = new ctor();
+            instance.context = context;
+            context.result = await instance[action].call(instance);
         } else {
-            console.debug(request.path, Router.routers);
+            console.debug(path, Router.routers);
             context.result = new NotFoundResult();
         }
         return await next();
@@ -78,20 +64,27 @@ const ROUTER_KEY = Symbol();
  * @param method 定义Http请求方式
  */
 export function router(path?: string | RegExp, method = HttpMethod.GET): any {
-    path = path || '';
-    return function (target: any, actionName?: string, descriptor?: PropertyDescriptor) {
+    return function (target: any, action?: string, descriptor?: PropertyDescriptor) {
+        path = path || '';
         if (typeof target === 'function') {
-            const metadata: Router[] = Reflect.getMetadata(ROUTER_KEY, target.prototype) || [];
-            metadata.forEach(item => {
-                item.path = `${path}/${item.path}`;
-                Router.register({ ...item, ctor: target });
-            });
-        } else {
-            const data: any = { method, actionName, action: descriptor!.value };
-            data.path = typeof path === 'string' ? path : path instanceof RegExp ? path.source : '';
-            const metadata = Reflect.getMetadata(ROUTER_KEY, target) || [];
-            metadata.push(data);
-            Reflect.defineMetadata(ROUTER_KEY, metadata, target);
+            const routers: Router[] = Reflect.getMetadata(ROUTER_KEY, target.prototype) || [];
+            routers.map(item => Object.assign({}, item, { ctor: target, path: `${path}/${item.path}` }))
+                .forEach(item => Router.register(item));
+        } else if (descriptor && typeof descriptor.value === 'function') {
+            //注册路由
+            const routers = Reflect.getMetadata(ROUTER_KEY, target) || [];
+            routers.push({ method, action, path: path instanceof RegExp ? path.source : path });
+            Reflect.defineMetadata(ROUTER_KEY, routers, target);
+            //绑定参数
+            const params = Reflect.getMetadata(PARAMS_KEY, target, action!);
+            if (!params) return;
+            const original = descriptor!.value;
+            descriptor!.value = function (this: Controller, ...args: any[]) {
+                params.forEach(({ index, source, name, type }) => {
+                    args[index] = this.context.getParamValue(source, name, type);
+                });
+                return original.apply(this, args);
+            }
         }
     }
 }
@@ -134,4 +127,66 @@ export function httpDelete(path?: string | RegExp) {
  */
 export function httpPatch(path?: string | RegExp) {
     return router(path, HttpMethod.PATCH);
+}
+
+const PARAMS_KEY = Symbol();
+
+/**
+ * 绑定参数的数据源类型
+ */
+export enum ParamSource {
+    /**
+     * 请求体
+     */
+    BODY = 'body',
+    /**
+     * 请求参数
+     */
+    QUERY = 'query',
+    /**
+     * 路由参数
+     */
+    ROUTE = 'route',
+}
+
+/**
+ * 装饰一个API参数，动态根据数据来源绑定值，并自动转换数据类型
+ * @param source 数据来源，可以是路由、请求参数或请求体F
+ * @param name 参数名称，可以和当前参数名称不同
+ * @param type 参数类型，可选的，默认获取参数定义类型，可以自定义转换方法
+ */
+function param(source: ParamSource, name: string, type?: Function) {
+    return function (target: any, method: string, index: number) {
+        const types = Reflect.getMetadata(DESIGN_PARAM_TYPES, target, method);
+        const metadata = Reflect.getMetadata(PARAMS_KEY, target, method) || [];
+        metadata.push({ name, type: type || types[index], index, source });
+        Reflect.defineMetadata(PARAMS_KEY, metadata, target, method);
+    }
+}
+
+/**
+ * 装饰一个API参数，动态根据指定的路由参数来绑定值，并自动转换数据类型
+ * @param name 要绑定路由参数名称，可以和当前参数名称不同
+ * @param type 参数类型，可选的，默认获取参数定义类型，可以自定义转换方法
+ */
+export function route(name: string, type?: Function) {
+    return param(ParamSource.ROUTE, name, type);
+}
+
+/**
+ * 装饰一个API参数，动态根据指定的URL请求参数来绑定值，并自动转换数据类型
+ * @param name 要绑定URL请求参数名称，可以和当前参数名称不同
+ * @param type 参数类型，可选的，默认获取参数定义类型，可以自定义转换方法
+ */
+export function query(name: string, type?: Function) {
+    return param(ParamSource.QUERY, name, type);
+}
+
+/**
+ * 装饰一个API参数，动态根据指定的请求参数来绑定值，并自动转换数据类型
+ * @param name 要绑定请求参数名称，可以和当前参数名称不同
+ * @param type 参数类型，可选的，默认获取参数定义类型，可以自定义转换方法
+ */
+export function body(name: string, type?: Function) {
+    return param(ParamSource.BODY, name, type);
 }
