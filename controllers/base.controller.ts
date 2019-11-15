@@ -6,6 +6,7 @@ import { map } from "auto-mapping";
 import { HttpStatusCode } from "../core/statusCode";
 
 export default abstract class BaseController<T> extends Controller {
+    
 
     constructor(protected service: IService<T>, private vmType?: any) {
         super();
@@ -20,7 +21,7 @@ export default abstract class BaseController<T> extends Controller {
     public async index(@query('index') idx: number = 1, @query('size') size: number = 10) {
         const list = await this.service.getList(idx, size);
         if (this.vmType) {
-            list.rows = list.rows.map(item => map(item, this.vmType));
+            list.rows = list.rows.map(item => map(item, this.vmType, { nullable: true }));
         }
         const result = new ViewModel(list);
         return this.json(result);
@@ -35,7 +36,7 @@ export default abstract class BaseController<T> extends Controller {
         const model = await this.service.get(id);
         if (!model) return this.notFound();
         let result: any = model;
-        this.vmType && (result = map(model, this.vmType));
+        this.vmType && (result = map(model, this.vmType, { nullable: true }));
         result = new ViewModel(result);
         return this.json(result);
     }
